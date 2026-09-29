@@ -10,6 +10,14 @@
   ],
   "author": "lak7-manadon",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lak7/selflore.git"
+  },
+  "homepage": "https://github.com/lak7/selflore#readme",
+  "bugs": {
+    "url": "https://github.com/lak7/selflore/issues"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
