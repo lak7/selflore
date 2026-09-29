@@ -1,0 +1,36 @@
+{
+  "name": "selflore",
+  "version": "0.0.1",
+  "description": "selflore — a Claude skill. Placeholder; coming soon.",
+  "keywords": [
+    "claude",
+    "claude-skill",
+    "claude-code",
+    "selflore"
+  ],
+  "author": "lak7-manadon",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2"
+  }
+}
