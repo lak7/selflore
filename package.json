@@ -1,7 +1,7 @@
 {
   "name": "selflore",
   "version": "0.0.1",
-  "description": "selflore — a Claude skill. Placeholder; coming soon.",
+  "description": "Own what your agent builds. A Claude Code skill that captures what your agent did for you and tests you on it weekly.",
   "keywords": [
     "claude",
     "claude-skill",
@@ -19,16 +19,9 @@
     "url": "https://github.com/lak7/selflore/issues"
   },
   "type": "module",
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
-    }
-  },
   "files": [
     "dist",
+    "skill",
     "README.md"
   ],
   "engines": {
@@ -36,9 +29,18 @@
   },
   "scripts": {
     "build": "tsc",
+    "test": "vitest run",
     "prepublishOnly": "npm run build"
   },
   "devDependencies": {
-    "typescript": "^7.0.2"
+    "@types/node": "^26.6.3",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.3"
+  },
+  "dependencies": {
+    "@clack/prompts": "^1.8.1"
+  },
+  "bin": {
+    "selflore": "dist/cli.js"
   }
 }
