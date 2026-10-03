@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addEntry, finishTest, quizInput, recordCmd, statsCmd, suppressCmd } from "../src/lib/commands.js";
+import { addEntry, finishTest, projectName, quizInput, recordCmd, statsCmd, suppressCmd } from "../src/lib/commands.js";
 import { readConfig, writeConfig, DEFAULT_CONFIG } from "../src/lib/config.js";
 import { listEntries } from "../src/lib/entries.js";
 import { readQueue } from "../src/lib/queue.js";
@@ -18,7 +18,13 @@ describe("data CLI commands", () => {
     const [e] = listEntries();
     expect(e.id).toBe("2026-10-01-why-idempotent");
     expect(e.session).toBe("s1");
-    expect(e.project).toBeTruthy();
+    expect(e.project).toBe(projectName(cwd));
+  });
+
+  it("names projects by parent + directory", () => {
+    expect(projectName("/Users/me/GG/selflore/v0")).toBe("selflore/v0");
+    expect(projectName("/Users/me/GG/selflore/v0/")).toBe("selflore/v0");
+    expect(projectName("/work")).toBe("work");
   });
 
   it("enforces max_entries_per_session, allows replace and manual overflow", () => {

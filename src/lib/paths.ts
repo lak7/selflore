@@ -17,6 +17,7 @@ export const paths = {
   queue: () => path.join(selfloreHome(), "queue.json"),
   state: () => path.join(selfloreHome(), "state"),
   app: () => path.join(selfloreHome(), "app"),
+  notesHtml: () => path.join(selfloreHome(), "notes.html"),
   skill: () => path.join(claudeHome(), "skills", "selflore"),
   settings: () => path.join(claudeHome(), "settings.json"),
 };

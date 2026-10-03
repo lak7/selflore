@@ -10,7 +10,7 @@ selflore is a Claude Code skill. It captures the moments where Claude did real w
 npx selflore init
 ```
 
-Four questions: a self-rating from 1 to 10, what you want to keep sharp, how many entries to capture per session (3–7), and whether you want a nudge when a test is overdue. Re-run `init` at any time to change your answers. Your data is kept. Restart any open Claude Code sessions afterwards.
+Four questions: a self-rating from 1 to 10 (←/→ on a scale, starting at 5), what you want to keep sharp, how many entries to capture per session (3–7), and whether you want a nudge when a test is overdue. Re-run `init` at any time to change your answers. Your data is kept. Restart any open Claude Code sessions afterwards.
 
 ## Use
 
@@ -20,6 +20,7 @@ Work normally. When something lore-worthy happens, Claude logs an entry with a o
 |---|---|
 | `/selflore test` | Weekly quiz, about 10 questions and about 20 minutes. Each answer is graded immediately as got it, partial or missed, with an explanation. Say `unfair` to drop a question for good. |
 | `/selflore log` | Log the current thing manually. Also covers work done outside Claude Code. |
+| `/selflore notes` | Opens a page in your browser with everything captured this week, grouped by day, with answers hidden until you click. You can browse weeks and filter. In the terminal, run `npx selflore notes` (`--all`, `--project <name>`, or `--text` for plain text). |
 | `/selflore stats` | Weekly table: entries, questions, pass rate overall and by skill, retest backlog, and self-rating vs. observed pass rate. |
 
 ## Remove

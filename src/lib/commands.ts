@@ -14,6 +14,11 @@ import {
 import { applyGrade, dueItems, readQueue, writeQueue, type Grade } from "./queue.js";
 import { appendResult, QUESTION_TYPES, readResults, testedEntryIds, type QuestionType } from "./results.js";
 import { readSession, writeSession } from "./session.js";
+import fs from "node:fs";
+import { renderNotes } from "./notes.js";
+import { buildNotesData, renderNotesHtml } from "./notes-html.js";
+import { openInBrowser } from "./open.js";
+import { paths } from "./paths.js";
 import { renderStats } from "./stats.js";
 
 export interface CmdResult {
@@ -32,10 +37,15 @@ function git(cwd: string, args: string[]): string {
   }
 }
 
+/** Last two path segments ("selflore/v0"), so same-named folders in different parents stay distinct. */
+export function projectName(dir: string): string {
+  return path.resolve(dir).split(path.sep).filter(Boolean).slice(-2).join("/") || dir;
+}
+
 export function projectInfo(cwd: string): { project: string; commit: string } {
   const top = git(cwd, ["rev-parse", "--show-toplevel"]);
   return {
-    project: path.basename(top || cwd),
+    project: projectName(top || cwd),
     commit: top ? git(cwd, ["rev-parse", "--short", "HEAD"]) : "",
   };
 }
@@ -209,6 +219,32 @@ export function statsCmd(project?: string): CmdResult {
       queue: readQueue(),
       rating: readConfig().rating,
       project,
+    }),
+  );
+}
+
+export interface NotesOpts {
+  all?: boolean;
+  project?: string;
+  text?: boolean;
+}
+
+/** Write the notes page and open it in the browser; `text` prints the plain-text list instead. */
+export function notesCmd(opts: NotesOpts = {}, now = new Date()): CmdResult {
+  if (!opts.text) {
+    const file = paths.notesHtml();
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, renderNotesHtml({ ...buildNotesData(now), initial: { all: !!opts.all, project: opts.project ?? null } }));
+    return ok(openInBrowser(file) ? `opened ${file}` : `notes page written: file://${file}`);
+  }
+  return ok(
+    renderNotes({
+      entries: listEntries(),
+      tested: testedEntryIds(readResults()),
+      queue: readQueue(),
+      now,
+      all: opts.all,
+      project: opts.project,
     }),
   );
 }

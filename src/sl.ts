@@ -5,6 +5,7 @@ import {
   addEntry,
   finishTest,
   listCmd,
+  notesCmd,
   quizInput,
   recordCmd,
   statsCmd,
@@ -20,7 +21,8 @@ const USAGE = `usage: sl <command>
   record --entry <id> --grade got|partial|missed --type <question-type>
   suppress <id>                           flag an entry as unfair; never test it again
   finish-test
-  stats [--project <name>]`;
+  stats [--project <name>]
+  notes [--all] [--project <name>] [--text]  open the notes page (or print text)`;
 
 function flag(args: string[], name: string): string | undefined {
   const i = args.indexOf(`--${name}`);
@@ -62,6 +64,8 @@ async function main(argv: string[]): Promise<CmdResult> {
       return finishTest();
     case "stats":
       return statsCmd(flag(args, "project"));
+    case "notes":
+      return notesCmd({ all: args.includes("--all"), project: flag(args, "project"), text: args.includes("--text") });
   }
   return { code: 1, out: USAGE };
 }

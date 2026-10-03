@@ -2,6 +2,7 @@ import * as p from "@clack/prompts";
 import { clampCap, configExists, DEFAULT_CONFIG, readConfig, writeConfig, type Config } from "./lib/config.js";
 import { installFiles } from "./lib/install.js";
 import { paths } from "./lib/paths.js";
+import { ratingPrompt } from "./rating-prompt.js";
 
 const BUILTIN_SHARP = ["debugging", "architecture", "fundamentals"];
 
@@ -13,29 +14,24 @@ function bail<T>(v: T): Exclude<T, symbol> {
   return v as Exclude<T, symbol>;
 }
 
-async function ask(existing: Config): Promise<Config> {
-  const rating = bail(
-    await p.text({
-      message: "Rate yourself as a software engineer, 1–10.",
-      initialValue: String(existing.rating),
-      validate: (v) => (/^(10|[1-9])$/.test((v ?? "").trim()) ? undefined : "Enter a whole number from 1 to 10"),
-    }),
-  );
+async function ask(existing: Config, reinstall: boolean): Promise<Config> {
+  // Starts on 5 (or the previous answer on re-run).
+  const rating = bail(await ratingPrompt("Rate yourself as a software engineer, 1–10.", existing.rating));
 
   const prevStack = existing.keep_sharp.filter((k) => !BUILTIN_SHARP.includes(k));
   const sharp = bail(
     await p.multiselect({
-      message: "What do you most want to keep sharp?",
+      message: "What do you most want to keep sharp? (pick one or more: space to select, enter to confirm)",
       options: [
         { value: "debugging", label: "Debugging" },
         { value: "architecture", label: "Architecture & tradeoffs" },
         { value: "fundamentals", label: "Language & framework fundamentals" },
         { value: "__stack", label: "A named stack", hint: "you'll type it next" },
       ],
-      initialValues: [
-        ...existing.keep_sharp.filter((k) => BUILTIN_SHARP.includes(k)),
-        ...(prevStack.length ? ["__stack"] : []),
-      ],
+      // Nothing pre-ticked on a fresh install, so enter alone can't silently submit a default.
+      initialValues: reinstall
+        ? [...existing.keep_sharp.filter((k) => BUILTIN_SHARP.includes(k)), ...(prevStack.length ? ["__stack"] : [])]
+        : [],
       required: true,
     }),
   );
@@ -72,7 +68,7 @@ async function ask(existing: Config): Promise<Config> {
 
   return {
     ...existing,
-    rating: Number(rating.trim()),
+    rating,
     keep_sharp,
     max_entries_per_session: clampCap(cap),
     nudge,
@@ -92,7 +88,7 @@ export async function init(opts: { yes: boolean }): Promise<void> {
 
   p.intro("selflore — own what your agent builds");
   if (reinstall) p.log.info("Existing config found; your previous answers are pre-filled. Data is kept.");
-  const config = await ask(existing);
+  const config = await ask(existing, reinstall);
   writeConfig(config);
   installFiles();
   p.note(

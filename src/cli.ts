@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { notesCmd } from "./lib/commands.js";
 import { removeFiles } from "./lib/install.js";
 import { selfloreHome } from "./lib/paths.js";
 
@@ -7,10 +8,11 @@ const USAGE = `selflore — own what your agent builds
 usage:
   npx selflore init              install skill + hooks, run onboarding (re-run to change answers)
   npx selflore init --yes        non-interactive; keep existing config or use defaults
+  npx selflore notes             open this week's notes in your browser (--all, --project <name>, --text)
   npx selflore remove            remove skill + hooks, keep your data
   npx selflore remove --purge    remove everything, including ${selfloreHome()}
 
-inside Claude Code:  /selflore test   /selflore log   /selflore stats`;
+inside Claude Code:  /selflore test   /selflore log   /selflore notes   /selflore stats`;
 
 async function main(): Promise<void> {
   const [cmd, ...args] = process.argv.slice(2);
@@ -19,6 +21,11 @@ async function main(): Promise<void> {
       // Imported lazily: the prompt library is only needed here, not in the hook runtime.
       const { init } = await import("./init.js");
       await init({ yes: args.includes("--yes") || args.includes("-y") });
+      return;
+    }
+    case "notes": {
+      const i = args.indexOf("--project");
+      console.log(notesCmd({ all: args.includes("--all"), project: i >= 0 ? args[i + 1] : undefined, text: args.includes("--text") }).out);
       return;
     }
     case "remove": {
