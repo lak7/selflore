@@ -9,6 +9,7 @@ export interface NoteCard {
   date: string;
   project: string;
   kind: string;
+  level: string;
   skill: string;
   paths: string[];
   commit: string;
@@ -29,13 +30,14 @@ export interface NotesData {
   initial?: { all: boolean; project: string | null };
 }
 
-export function toCard(e: Entry, tested: Set<string>, queue: Queue): NoteCard {
+export function toCard(e: Entry, tested: Set<string>, queue: Queue, now = new Date()): NoteCard {
   const { prose, snippet } = splitBody(e.body);
   return {
     id: e.id,
     date: e.date,
     project: e.project,
     kind: e.kind,
+    level: e.level,
     skill: e.skill,
     paths: e.paths,
     commit: e.commit,
@@ -43,7 +45,7 @@ export function toCard(e: Entry, tested: Set<string>, queue: Queue): NoteCard {
     prose,
     snippet: snippet ? snippet.replace(/\s+$/, "") : null,
     snippetLang: e.body.match(/```([\w+-]+)/)?.[1] ?? "",
-    ...entryStatus(e, tested, queue),
+    ...entryStatus(e, tested, queue, now),
   };
 }
 
@@ -56,7 +58,7 @@ export function buildNotesData(now = new Date()): NotesData {
     week_start: weekStart(now),
     rating: config.rating,
     keep_sharp: config.keep_sharp,
-    entries: listEntries().map((e) => toCard(e, tested, queue)),
+    entries: listEntries().map((e) => toCard(e, tested, queue, now)),
   };
 }
 
@@ -125,6 +127,9 @@ header.top { display: flex; align-items: flex-end; justify-content: space-betwee
 .badge { font-size: 11.5px; font-weight: 600; letter-spacing: 0.02em; border-radius: 6px; padding: 2px 8px; }
 .kind { color: var(--kind); background: color-mix(in srgb, var(--kind) 12%, transparent); text-transform: capitalize; }
 .skill { color: var(--muted); background: var(--surface-2); font-weight: 500; }
+.level { color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent); font-weight: 500; }
+.level.design { color: var(--decision); border-color: color-mix(in srgb, var(--decision) 35%, transparent); }
+.status.stale { color: var(--faint); font-style: italic; }
 .status { margin-left: auto; border: 1px solid var(--border); color: var(--muted); font-weight: 500; }
 .status.tested { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 35%, transparent); }
 .status.retest { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, transparent); }
@@ -169,7 +174,8 @@ const JS = String.raw`
   var DATA = JSON.parse(document.getElementById("selflore-data").textContent);
   var NOW = new Date();
   var KIND_VAR = { bug: "--bug", decision: "--decision", concept: "--concept", pattern: "--pattern" };
-  var STATUS_LABEL = { untested: "Untested", tested: "Tested", suppressed: "Suppressed" };
+  var STATUS_LABEL = { untested: "Untested", tested: "Tested", suppressed: "Suppressed", stale: "Stale" };
+  var LEVEL_LABEL = { detail: "Detail", design: "Design" };
 
   function pad(n) { return (n < 10 ? "0" : "") + n; }
   function parse(s) { var p = s.split("-"); return new Date(Date.UTC(+p[0], +p[1] - 1, +p[2])); }
@@ -179,12 +185,12 @@ const JS = String.raw`
   function fmt(s, opts) { return parse(s).toLocaleDateString(undefined, Object.assign({ timeZone: "UTC" }, opts)); }
 
   var init = DATA.initial || {};
-  var state = { week: DATA.week_start, all: !!init.all, project: init.project || null, skill: null, kind: null, status: null, q: "" };
+  var state = { week: DATA.week_start, all: !!init.all, project: init.project || null, level: null, skill: null, kind: null, status: null, q: "" };
   (location.hash.slice(1) || "").split("&").forEach(function (kv) {
     var p = kv.split("="); var k = decodeURIComponent(p[0] || ""); var v = p[1] ? decodeURIComponent(p[1]) : "";
     if (k === "all") state.all = true;
     else if (k === "week" && /^\d{4}-\d{2}-\d{2}$/.test(v)) state.week = monday(v);
-    else if (["project", "skill", "kind", "status"].indexOf(k) >= 0 && v) state[k] = v;
+    else if (["project", "level", "skill", "kind", "status"].indexOf(k) >= 0 && v) state[k] = v;
   });
   var earliest = DATA.entries.reduce(function (m, e) { var w = monday(e.date); return w < m ? w : m; }, DATA.week_start);
 
@@ -203,6 +209,7 @@ const JS = String.raw`
   function inScope(e) { return state.all || monday(e.date) === state.week; }
   function matches(e, skip) {
     if (skip !== "project" && state.project && e.project !== state.project) return false;
+    if (skip !== "level" && state.level && e.level !== state.level) return false;
     if (skip !== "skill" && state.skill && e.skill !== state.skill) return false;
     if (skip !== "kind" && state.kind && e.kind !== state.kind) return false;
     if (skip !== "status" && state.status && e.status !== state.status) return false;
@@ -259,7 +266,9 @@ const JS = String.raw`
 
   function renderChips(scope) {
     var el = document.getElementById("chips"); el.textContent = "";
-    [chipRow("project", "Project", scope), chipRow("skill", "Skill", scope),
+    [chipRow("project", "Project", scope),
+     chipRow("level", "Level", scope, function (v) { return LEVEL_LABEL[v] || v; }),
+     chipRow("skill", "Skill", scope),
      chipRow("kind", "Kind", scope, function (v) { return v.charAt(0).toUpperCase() + v.slice(1); }),
      chipRow("status", "Status", scope, function (v) { return v === "retest" ? "Retest" : STATUS_LABEL[v]; })]
       .forEach(function (r) { if (r) el.appendChild(r); });
@@ -283,6 +292,7 @@ const JS = String.raw`
     c.style.setProperty("--kind", "var(" + (KIND_VAR[e.kind] || "--border") + ")");
     c.appendChild(h("div", { class: "row" },
       h("span", { class: "badge kind", text: e.kind }),
+      h("span", { class: "badge level " + e.level, text: LEVEL_LABEL[e.level] || e.level }),
       h("span", { class: "badge skill", text: e.skill }),
       h("span", { class: "badge status " + e.status, text: statusText(e) })));
     c.appendChild(h("div", { class: "q", text: e.testable }));
@@ -307,12 +317,12 @@ const JS = String.raw`
       return;
     }
     if (shown.length === 0) {
-      var filtered = state.project || state.skill || state.kind || state.status || state.q;
+      var filtered = state.project || state.level || state.skill || state.kind || state.status || state.q;
       list.appendChild(h("div", { class: "empty" },
         h("strong", { text: filtered ? "No entries match these filters" : "Nothing captured this week" }),
         filtered ? null : "Try another week or switch to All time.",
         filtered ? h("button", { class: "chip", text: "Clear filters", onclick: function () {
-          state.project = state.skill = state.kind = state.status = null; state.q = ""; document.getElementById("search").value = ""; render();
+          state.project = state.level = state.skill = state.kind = state.status = null; state.q = ""; document.getElementById("search").value = ""; render();
         } }) : null));
       return;
     }
@@ -328,7 +338,7 @@ const JS = String.raw`
   function syncHash() {
     var parts = [];
     if (state.all) parts.push("all"); else if (state.week !== DATA.week_start) parts.push("week=" + state.week);
-    ["project", "skill", "kind", "status"].forEach(function (k) { if (state[k]) parts.push(k + "=" + encodeURIComponent(state[k])); });
+    ["project", "level", "skill", "kind", "status"].forEach(function (k) { if (state[k]) parts.push(k + "=" + encodeURIComponent(state[k])); });
     history.replaceState(null, "", parts.length ? "#" + parts.join("&") : location.pathname);
   }
 

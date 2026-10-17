@@ -5,6 +5,14 @@ import { paths } from "./paths.js";
 export const KINDS = ["bug", "decision", "concept", "pattern"] as const;
 export type Kind = (typeof KINDS)[number];
 
+export const LEVELS = ["detail", "design"] as const;
+export type Level = (typeof LEVELS)[number];
+
+/** Entries from before `level` existed: decisions are design-level, everything else detail. */
+export function inferLevel(kind: string | undefined): Level {
+  return kind === "decision" ? "design" : "detail";
+}
+
 export const MAX_BODY_WORDS = 150; // PRD says ~120; small grace before rejecting
 export const MAX_SNIPPET_LINES = 40;
 
@@ -15,6 +23,7 @@ export interface Entry {
   project: string;
   commit: string;
   kind: Kind;
+  level: Level;
   skill: string;
   paths: string[];
   testable: string;
@@ -29,6 +38,7 @@ const FIELD_ORDER: (keyof Omit<Entry, "body">)[] = [
   "project",
   "commit",
   "kind",
+  "level",
   "skill",
   "paths",
   "testable",
@@ -102,6 +112,7 @@ export function validateEntry(e: Partial<Entry>): string[] {
   if (!e.testable || !String(e.testable).trim())
     errors.push("missing `testable` — if you cannot write a test question, the moment is not worth logging");
   if (!e.kind || !KINDS.includes(e.kind as Kind)) errors.push(`\`kind\` must be one of ${KINDS.join(" | ")}`);
+  if (e.level !== undefined && !LEVELS.includes(e.level as Level)) errors.push(`\`level\` must be one of ${LEVELS.join(" | ")}`);
   if (!e.skill || !String(e.skill).trim()) errors.push("missing `skill`");
   const { prose, snippet } = splitBody(e.body ?? "");
   const words = prose.split(/\s+/).filter(Boolean).length;
@@ -179,6 +190,7 @@ function normalize(p: Partial<Entry>, id: string): Entry {
     project: String(p.project ?? ""),
     commit: String(p.commit ?? ""),
     kind: (p.kind ?? "concept") as Kind,
+    level: LEVELS.includes(p.level as Level) ? (p.level as Level) : inferLevel(p.kind),
     skill: String(p.skill ?? ""),
     paths: Array.isArray(p.paths) ? p.paths.map(String) : p.paths ? [String(p.paths)] : [],
     testable: String(p.testable ?? ""),
@@ -186,3 +198,26 @@ function normalize(p: Partial<Entry>, id: string): Entry {
     body: p.body ?? "",
   };
 }
+
+// Question scaffolding that says nothing about the topic ("why does … happen if …").
+const STOPWORDS = new Set(
+  "the and for are was were why what when where which who how does did doesn don isn can could would should will this that these those with without from into than then there here have has had not but its it's you your our they them their about after before over under also just only use used using happen happens happened instead break breaks".split(
+    " ",
+  ),
+);
+
+function words(s: string): Set<string> {
+  return new Set(s.toLowerCase().match(/[a-z0-9_]+/g)?.filter((w) => w.length > 2 && !STOPWORDS.has(w)) ?? []);
+}
+
+/** Jaccard similarity of the word sets of two strings (words of 3+ chars). */
+export function similarity(a: string, b: string): number {
+  const wa = words(a);
+  const wb = words(b);
+  if (!wa.size || !wb.size) return 0;
+  let inter = 0;
+  for (const w of wa) if (wb.has(w)) inter++;
+  return inter / (wa.size + wb.size - inter);
+}
+
+export const MERGE_SIMILARITY = 0.5;

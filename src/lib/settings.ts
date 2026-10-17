@@ -18,7 +18,11 @@ export interface Settings {
   [k: string]: unknown;
 }
 
-export const HOOK_SCRIPTS = { SessionStart: "session-start.js", Stop: "stop.js" } as const;
+export const HOOK_SCRIPTS = {
+  SessionStart: "session-start.js",
+  Stop: "stop.js",
+  UserPromptSubmit: "user-prompt-submit.js",
+} as const;
 
 export function hookCommand(appDir: string, script: string): string {
   return `node "${path.join(appDir, "hooks", script)}"`;

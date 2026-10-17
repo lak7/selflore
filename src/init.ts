@@ -1,5 +1,16 @@
 import * as p from "@clack/prompts";
-import { clampCap, configExists, DEFAULT_CONFIG, readConfig, writeConfig, type Config } from "./lib/config.js";
+import {
+  configExists,
+  DEFAULT_CONFIG,
+  readConfig,
+  writeConfig,
+  type Balance,
+  type CaptureMode,
+  type CaptureModel,
+  type Config,
+  type FocusMode,
+  type Intensity,
+} from "./lib/config.js";
 import { installFiles } from "./lib/install.js";
 import { paths } from "./lib/paths.js";
 import { ratingPrompt } from "./rating-prompt.js";
@@ -47,13 +58,70 @@ async function ask(existing: Config, reinstall: boolean): Promise<Config> {
     keep_sharp.push(...stack.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean));
   }
 
-  const cap = bail(
-    await p.select({
-      message: "How much should Claude capture per session?",
-      options: [3, 4, 5, 6, 7].map((n) => ({ value: n, label: `${n} entries`, hint: n === 3 ? "default" : undefined })),
-      initialValue: existing.max_entries_per_session,
+  const capture_intensity = bail(
+    await p.select<Intensity>({
+      message: "Capture intensity: how much should count as worth capturing?",
+      options: [
+        { value: "light", label: "Light", hint: "only the big moments: major bugs and design decisions" },
+        { value: "normal", label: "Normal", hint: "every real unit of work: bugs, tradeoffs, new APIs, unread modules" },
+        { value: "thorough", label: "Thorough", hint: "smaller gotchas and edge cases too" },
+      ],
+      initialValue: existing.capture_intensity,
     }),
   );
+
+  const mode = bail(
+    await p.select<FocusMode>({
+      message: "What should selflore capture? (you can override this per project later)",
+      options: [
+        { value: "details", label: "Details", hint: "language & library specifics, edge cases, gotchas" },
+        { value: "design", label: "Design", hint: "architecture, tradeoffs, failure modes" },
+        { value: "mixed", label: "Mixed", hint: "both; you choose the balance next" },
+      ],
+      initialValue: existing.focus.mode,
+    }),
+  );
+  let balance: Balance = existing.focus.balance;
+  if (mode === "mixed") {
+    balance = bail(
+      await p.select<Balance>({
+        message: "Mixed: what balance?",
+        options: [
+          { value: "design", label: "Mostly design", hint: "~70% design, 30% details" },
+          { value: "balanced", label: "Balanced", hint: "50/50" },
+          { value: "details", label: "Mostly details", hint: "~70% details, 30% design" },
+        ],
+        initialValue: existing.focus.balance,
+      }),
+    );
+  }
+
+  const capture = bail(
+    await p.select<CaptureMode>({
+      message: "How should capture happen?",
+      options: [
+        { value: "background", label: "In the background", hint: "recommended; never interrupts, runs a separate Claude call" },
+        { value: "quiet", label: "Quiet hint", hint: "Claude logs at a natural pause in your session; no extra calls" },
+        { value: "off", label: "Off", hint: "only when you run /selflore log" },
+      ],
+      initialValue: existing.capture,
+    }),
+  );
+
+  let capture_model: CaptureModel = existing.capture_model;
+  if (capture === "background") {
+    capture_model = bail(
+      await p.select<CaptureModel>({
+        message: "Which model should background capture use?",
+        options: [
+          { value: "session", label: "Same as the session", hint: "default" },
+          { value: "sonnet", label: "Sonnet", hint: "sharp questions, moderate cost" },
+          { value: "haiku", label: "Haiku", hint: "cheapest and fastest" },
+        ],
+        initialValue: existing.capture_model,
+      }),
+    );
+  }
 
   const nudge = bail(
     await p.select({
@@ -70,7 +138,10 @@ async function ask(existing: Config, reinstall: boolean): Promise<Config> {
     ...existing,
     rating,
     keep_sharp,
-    max_entries_per_session: clampCap(cap),
+    capture_intensity,
+    focus: { mode, balance },
+    capture,
+    capture_model,
     nudge,
   };
 }
@@ -95,9 +166,10 @@ export async function init(opts: { yes: boolean }): Promise<void> {
     [
       `config   ${paths.config()}`,
       `skill    ${paths.skill()}`,
-      `hooks    SessionStart + Stop in ${paths.settings()}`,
+      `hooks    SessionStart + Stop + UserPromptSubmit in ${paths.settings()}`,
       "",
-      "Work normally. Claude logs lore-worthy moments as they happen.",
+      "Work normally. selflore never interrupts; lore is captured as you go.",
+      "Per-project focus: run `selflore focus details --project` inside a repo.",
       "Once a week, run /selflore test (~20 min). /selflore stats shows the trend.",
       "Restart any open Claude Code sessions to pick up the skill and hooks.",
     ].join("\n"),

@@ -8,21 +8,34 @@ Target: about 10 questions in about 20 minutes. Tests are meant to measure **und
 {{SL}} quiz-input
 ```
 
-This returns JSON with `config` (`rating`, `keep_sharp`), `target_questions`, `retests` (due misses from earlier weeks) and `fresh` (entries never tested). Each entry has `testable`, a `body` (the answer key, usually with a code snippet), `kind`, `skill`, `paths` and `commit`.
+This returns JSON with:
+- `config` (`rating`, `keep_sharp`);
+- `target_questions`, plus `target_split`, the number of `design` and `detail` questions to aim for, set by the user's focus;
+- `retests`: due misses from earlier weeks;
+- `fresh`: entries never tested and less than 3 weeks old;
+- `stale_count`: older untested entries, which are left out on purpose.
+
+Each entry has `testable`, a `body` (the answer key, usually with a code snippet), `kind`, `level` (`detail` or `design`), `skill`, `paths` and `commit`.
 
 - If both lists are empty, say there is nothing to test yet and stop.
-- **Include every due retest.** Then fill the rest up to `target_questions` with `fresh` entries, weighted toward the `keep_sharp` areas. If there are fewer than 10 entries in total, ask fewer questions. Never pad.
+- **Include every due retest.** Then fill the rest up to `target_questions` with `fresh` entries. Match `target_split` as closely as the available entries allow, and within each level weight toward the `keep_sharp` areas. If there are fewer than 10 entries in total, ask fewer questions. Never pad.
 - Fresh entries you skip stay untested and roll into next week.
 
 ## 2. Build the questions (before asking the first one)
 
-There is one question per entry. Pick the best type for each, in this priority order:
+There is one question per entry. The entry's `level` decides the question family. Pick the best type within it:
 
-1. **explain-why** (from `decision` entries, and others where it fits): "Why did we choose X over Y? What breaks if we hadn't?" The entry's `testable` line is the starting point; you can sharpen it.
-2. **predict-behavior:** show the snippet (or a trimmed piece of it) and ask what happens for a specific, concrete input or condition.
-3. **find-the-bug:** take the snippet, reintroduce the logged bug from a `bug` entry, and ask the user to locate it and explain the failure. Don't mark the bug in any way, and don't let the change stand out visually.
-4. **rewrite-from-spec:** "Without looking, write the signature and core logic of…". **At most one per test.**
-5. **recall:** only when nothing better fits.
+**Design entries:**
+1. **explain-why:** "Why did we choose X over Y?" The entry's `testable` line is the starting point; you can sharpen it.
+2. **what-breaks:** "What fails if we remove or change X?" Ask for the concrete failure, not a vague "it breaks".
+3. **tradeoff-at-scale:** "What happens to this design at 10× load, with two replicas, or when the dependency is slow?"
+
+**Detail entries:**
+1. **predict-behavior:** show the snippet (or a trimmed piece of it) and ask what happens for a specific, concrete input or condition, and why.
+2. **find-the-bug:** take the snippet, reintroduce the logged bug from a `bug` entry, and ask the user to locate it and explain the failure. Don't mark the bug in any way, and don't let the change stand out visually.
+3. **rewrite-from-spec:** "Without looking, write the signature and core logic of…". **At most one per test.**
+
+**recall:** only when nothing better fits, at either level.
 
 Calibrate to `config.rating`:
 
@@ -50,7 +63,7 @@ For each question:
 4. **Explain immediately**, before the next question. Give the verdict, then the correct explanation in 2–5 sentences: what they got right, the gap and the real answer. For a miss, add the single sentence they should remember.
 5. Record it:
    ```bash
-   {{SL}} record --entry <id> --grade got|partial|missed --type explain-why|predict-behavior|find-the-bug|rewrite-from-spec|recall
+   {{SL}} record --entry <id> --grade got|partial|missed --type explain-why|what-breaks|tradeoff-at-scale|predict-behavior|find-the-bug|rewrite-from-spec|recall
    ```
    The CLI decides whether this was a retest and schedules misses and partials for +7 and +21 days. Retests retire after two consecutive passes.
 

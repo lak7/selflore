@@ -10,17 +10,46 @@ selflore is a Claude Code skill. It captures the moments where Claude did real w
 npx selflore init
 ```
 
-Four questions: a self-rating from 1 to 10 (←/→ on a scale, starting at 5), what you want to keep sharp, how many entries to capture per session (3–7), and whether you want a nudge when a test is overdue. Re-run `init` at any time to change your answers. Your data is kept. Restart any open Claude Code sessions afterwards.
+A few questions:
+- a self-rating from 1 to 10 (←/→ on a scale, starting at 5);
+- what you want to keep sharp;
+- **capture intensity** (light, normal or thorough);
+- **focus**: details, design or mixed, plus a balance if you pick mixed;
+- **how capture happens**: background, quiet or off;
+- the model for background capture;
+- whether you want a nudge when a test is overdue.
+
+ Re-run `init` at any time to change your answers. Your data is kept. Restart any open Claude Code sessions afterwards.
 
 ## Use
 
-Work normally. When something lore-worthy happens, Claude logs an entry with a one-line note. At most `max_entries_per_session` entries are logged per session.
+Work normally. selflore never interrupts you:
+- **background** (default): after turns with real code work, a separate headless Claude reads the new part of the session and writes entries. Your next session starts with a one-line "captured N entries" mention.
+- **quiet**: Claude gets a one-line hint with your next message and logs at a natural pause.
+- **off**: only `/selflore log`.
+
+There's no cap. Near-duplicates are merged into the existing entry. Entries untested for 3 weeks drop out of the quiz but stay in notes.
+
+**Focus** sets what gets captured:
+- `details`: language and library specifics;
+- `design`: architecture and tradeoffs;
+- `mixed`: both, with a balance you choose.
+
+It's set globally and can be overridden per project; the project setting wins:
+
+```bash
+selflore focus design                     # global
+selflore focus details --project          # just this repo (e.g. while learning a new language)
+selflore focus mixed --balance design     # mostly design
+selflore focus --reset --project          # back to the global setting
+```
 
 | Command | What it does |
 |---|---|
 | `/selflore test` | Weekly quiz, about 10 questions and about 20 minutes. Each answer is graded immediately as got it, partial or missed, with an explanation. Say `unfair` to drop a question for good. |
 | `/selflore log` | Log the current thing manually. Also covers work done outside Claude Code. |
 | `/selflore notes` | Opens a page in your browser with everything captured this week, grouped by day, with answers hidden until you click. You can browse weeks and filter. In the terminal, run `npx selflore notes` (`--all`, `--project <name>`, or `--text` for plain text). |
+| `/selflore focus` | Same as `selflore focus` above, from inside Claude Code. |
 | `/selflore stats` | Weekly table: entries, questions, pass rate overall and by skill, retest backlog, and self-rating vs. observed pass rate. |
 
 ## Remove
@@ -34,17 +63,18 @@ npx selflore remove --purge   # remove everything
 
 - **Skill** at `~/.claude/skills/selflore/`. Claude writes entries, builds quizzes and grades answers.
 - **Hooks** are merged into `~/.claude/settings.json`; existing hooks are never touched, and a backup is written to `settings.json.selflore-bak`.
-  - `SessionStart` gives Claude the session id and, if enabled, a one-line reminder when a test is overdue.
-  - `Stop` is a safety net. If the session had a large write, a dependency change or a fail → fix → pass loop and nothing was logged, it nudges once per session.
+  - `SessionStart` gives Claude the session id and capture mode, mentions background captures, and (if enabled) reminds you when a test is overdue.
+  - `Stop` never blocks. It looks only at work since the last capture: real code changes (not docs, reports or one-off scripts), new dependencies, and fail → fix → pass loops. It then starts a background capture or, in quiet mode, leaves a hint.
+  - `UserPromptSubmit` delivers that hint in quiet mode.
 - **Data** lives globally in `~/.selflore/`, because learning spans projects:
 
 ```
 ~/.selflore/
-  config.json        rating, keep_sharp, max_entries_per_session, nudge, cadence, last_test_at
+  config.json        rating, keep_sharp, capture_intensity, focus, projects, capture, capture_model, nudge, last_test_at
   entries/           YYYY-MM-DD-slug.md   (frontmatter + ≤120 words + an optional code snippet)
   results.jsonl      one line per graded answer
   queue.json         retest due dates
-  state/             per-session capture counters
+  state/             per-session capture progress, background-capture log
   app/               the runtime the hooks call
 ```
 

@@ -2,6 +2,13 @@ import type { Config } from "./config.js";
 
 const WEEK = 7 * 24 * 60 * 60 * 1000;
 
+const CAPTURE_LINE: Record<Config["capture"], string> = {
+  background:
+    "selflore capture=background: lore is captured automatically after turns. Do not log selflore entries yourself unless the user runs /selflore log.",
+  quiet: "selflore capture=quiet: you may get a selflore hint with a prompt; act on it only at a natural pause.",
+  off: "selflore capture=off: only log entries when the user runs /selflore log.",
+};
+
 /** Overdue = there is material and a week has passed since the last test (or since the first entry, before any test). */
 export function testOverdue(config: Config, oldestEntryDate: string | null, now: Date): boolean {
   if (!oldestEntryDate) return false;
@@ -12,6 +19,7 @@ export function testOverdue(config: Config, oldestEntryDate: string | null, now:
 export function sessionStartContext(sessionId: string | undefined, config: Config, oldestEntryDate: string | null, now: Date): string {
   const lines: string[] = [];
   if (sessionId) lines.push(`selflore session_id=${sessionId}`);
+  lines.push(CAPTURE_LINE[config.capture]);
   if (config.nudge && testOverdue(config, oldestEntryDate, now))
     lines.push("selflore: weekly test overdue — mention once that the user can run /selflore test (~20 min).");
   return lines.join("\n");

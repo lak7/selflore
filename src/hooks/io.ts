@@ -22,7 +22,11 @@ export async function readHookInput(): Promise<HookInput> {
   }
 }
 
-/** Hooks must never break the user's session: swallow everything and exit 0. */
+/**
+ * Hooks must never break the user's session: swallow everything and exit 0.
+ * Inside selflore's own background capture (SELFLORE_BG), hooks do nothing, so a capture can't trigger another.
+ */
 export function runHook(fn: () => Promise<void>): void {
+  if (process.env.SELFLORE_BG) process.exit(0);
   fn().catch(() => {}).finally(() => process.exit(0));
 }

@@ -4,9 +4,9 @@ The user said "this was important". It is also the escape hatch for work done ou
 
 1. Work out what they mean from the current conversation. If the conversation has no such context (for example, the work happened in Cursor or Codex), ask for a 2–3 sentence description and any code worth keeping.
 2. Write the entry exactly as described in [capture.md](capture.md). The same quality bar applies: a real `testable` line and a body that works as an answer key.
-3. Store it with the `--manual` flag. Manual entries may exceed the session cap; the CLI warns instead of refusing:
+3. Store it. Check `{{SL}} focus` for the level unless the user said otherwise:
    ```bash
-   {{SL}} entry add --session <session_id> --manual <<'LORE'
+   {{SL}} entry add --session <session_id> <<'LORE'
    …
    LORE
    ```

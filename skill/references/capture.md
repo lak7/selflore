@@ -8,6 +8,7 @@ Write one markdown entry with frontmatter and pipe it to `entry add`. `id`, `dat
 {{SL}} entry add --session <session_id> <<'LORE'
 ---
 kind: bug                 # bug | decision | concept | pattern
+level: detail             # detail | design (must match the effective focus)
 skill: debugging          # debugging | architecture | fundamentals | <a keep_sharp stack name>
 paths: ["src/payments/webhook.ts"]
 testable: "Why must the Stripe webhook handler be idempotent, and what fails without it?"
@@ -34,6 +35,10 @@ Run it from the project's working directory so `project` and `commit` are detect
   - `decision`: a tradeoff was made, either by you or after the user corrected you.
   - `concept`: an idea the user needs, such as how an API or library actually behaves.
   - `pattern`: a reusable structure that entered the codebase.
+- **level** (check `{{SL}} focus` first):
+  - `detail`: language, library or API specifics. Good: "What does this `await` inside `forEach` actually do, and why did the writes run out of order?" Bad: "Which method sorts the array?"
+  - `design`: architecture and tradeoffs. Good: "Why a queue instead of cron here, and what breaks with two replicas?" Bad: "What is the queue library called?"
+  - If the focus is `details` or `design`, log only that level. In `mixed`, tag each entry honestly.
 - **skill:** use the user's `keep_sharp` area that fits best. Use the stack name, such as `postgres`, when the lore is stack-specific.
 - **paths:** the files involved, relative to the repo root.
 - **testable:** a single question written *now*, while context is fresh. It should test understanding, not trivia:
@@ -44,17 +49,15 @@ Run it from the project's working directory so `project` and `commit` are detect
 
 ## Responses from `entry add`
 
-- `logged <id> (n/cap this session)`: done. Tell the user in one line.
-- `entry rejected: …`: fix the listed problems and retry once. If there is no good `testable` line, drop the entry.
-- `cap reached` (exit code 2): compare the new moment against the listed entries using the user's `keep_sharp` areas. If the new one is clearly better, run:
-  `{{SL}} entry replace <weaker-id> --session <session_id> <<'LORE' … LORE`
-  Otherwise drop it silently.
+- `logged <id> [level]`: done. Tell the user in one line.
+- `updated <id> (merged …)`: the moment was close to an existing untested entry, which has been refreshed. Also done.
+- `entry rejected: …`: fix the listed problems and retry once. If there's no good `testable` line, drop the entry.
 
-## Choosing what to log when several triggers fired
+## Choosing what to log
 
-Rank the candidates and keep the top ones up to the cap:
-1. A match with the user's `keep_sharp` areas.
+When several moments are candidates, prefer:
+1. A match with the user's `keep_sharp` areas and the effective focus.
 2. Bugs and corrected decisions. These are the moments the user is most likely to have missed.
-3. Anything the user did not visibly read.
+3. Anything the user didn't visibly read.
 
 Prefer one deep entry over two shallow ones.

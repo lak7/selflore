@@ -60,7 +60,8 @@ describe("session start nudge", () => {
   });
 
   it("always injects the session id, adds the nudge only when enabled", () => {
-    expect(sessionStartContext("abc", DEFAULT_CONFIG, "2026-10-01", now)).toMatch(/session_id=abc\nselflore: weekly test overdue/);
-    expect(sessionStartContext("abc", { ...DEFAULT_CONFIG, nudge: false }, "2026-10-01", now)).toBe("selflore session_id=abc");
+    expect(sessionStartContext("abc", DEFAULT_CONFIG, "2026-10-01", now)).toMatch(/session_id=abc\nselflore capture=background.*\nselflore: weekly test overdue/);
+    expect(sessionStartContext("abc", { ...DEFAULT_CONFIG, nudge: false }, "2026-10-01", now)).not.toMatch(/overdue/);
+    expect(sessionStartContext("abc", { ...DEFAULT_CONFIG, capture: "quiet" }, null, now)).toMatch(/capture=quiet/);
   });
 });

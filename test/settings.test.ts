@@ -40,7 +40,7 @@ describe("settings merge", () => {
       installHooks();
       const file = path.join(homes.claude(), "settings.json");
       const s = JSON.parse(fs.readFileSync(file, "utf8"));
-      expect(Object.keys(s.hooks)).toEqual(["SessionStart", "Stop"]);
+      expect(Object.keys(s.hooks)).toEqual(["SessionStart", "Stop", "UserPromptSubmit"]);
       uninstallHooks();
       expect(JSON.parse(fs.readFileSync(file, "utf8"))).toEqual({});
       expect(fs.existsSync(`${file}.selflore-bak`)).toBe(true);

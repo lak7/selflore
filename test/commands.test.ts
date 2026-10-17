@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { addEntry, finishTest, projectName, quizInput, recordCmd, statsCmd, suppressCmd } from "../src/lib/commands.js";
-import { readConfig, writeConfig, DEFAULT_CONFIG } from "../src/lib/config.js";
+import { readConfig } from "../src/lib/config.js";
 import { listEntries } from "../src/lib/entries.js";
 import { readQueue } from "../src/lib/queue.js";
 import { readResults } from "../src/lib/results.js";
@@ -27,31 +27,37 @@ describe("data CLI commands", () => {
     expect(projectName("/work")).toBe("work");
   });
 
-  it("enforces max_entries_per_session, allows replace and manual overflow", () => {
-    writeConfig({ ...DEFAULT_CONFIG, max_entries_per_session: 3 });
-    for (const q of ["Q one?", "Q two?", "Q three?"]) expect(addEntry(sample(q), { session: "s1", cwd, now }).code).toBe(0);
-
-    const capped = addEntry(sample("Q four?"), { session: "s1", cwd, now });
-    expect(capped.code).toBe(2);
-    expect(capped.out).toMatch(/cap reached: 3\/3/);
-    expect(capped.out).toContain("2026-10-01-q-one");
-
-    // another session is unaffected
-    expect(addEntry(sample("Other session?"), { session: "s2", cwd, now }).code).toBe(0);
-
-    const replaced = addEntry(sample("Q four?"), { session: "s1", cwd, now, replace: "2026-10-01-q-one" });
-    expect(replaced.code).toBe(0);
-    expect(listEntries().map((e) => e.id)).not.toContain("2026-10-01-q-one");
-
-    const manual = addEntry(sample("Q five?"), { session: "s1", cwd, now, manual: true });
-    expect(manual.code).toBe(0);
-    expect(manual.out).toMatch(/over the session cap/);
+  it("has no per-session cap", () => {
+    const words = ["alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf", "hotel", "india", "juliet"];
+    for (const w of words) expect(addEntry(sample(`Why does ${w} matter here?`), { session: "s1", cwd, now }).code).toBe(0);
+    expect(listEntries()).toHaveLength(10);
   });
 
-  it("refuses to replace an entry from another session", () => {
-    addEntry(sample("Mine?"), { session: "s1", cwd, now });
-    const r = addEntry(sample("New?"), { session: "s2", cwd, now, replace: "2026-10-01-mine" });
-    expect(r.code).toBe(1);
+  it("merges a near-duplicate into the existing untested entry", () => {
+    addEntry(sample("Why must the webhook handler be idempotent under retries?"), { session: "s1", cwd, now });
+    const r = addEntry(sample("Why must the webhook handler be idempotent when Stripe retries?"), { session: "s2", cwd, now });
+    expect(r.out).toMatch(/^updated 2026-10-01-why-must-the-webhook-handler-be/);
+    const all = listEntries();
+    expect(all).toHaveLength(1);
+    expect(all[0].testable).toContain("when Stripe retries");
+  });
+
+  it("does not merge into an entry that was already tested, or with an unrelated question", () => {
+    addEntry(sample("Why must the webhook handler be idempotent under retries?"), { session: "s1", cwd, now });
+    recordCmd("2026-10-01-why-must-the-webhook-handler-be", "got", "explain-why", now);
+    expect(addEntry(sample("Why must the webhook handler be idempotent when Stripe retries?"), { session: "s1", cwd, now }).out).toMatch(/^logged/);
+    expect(addEntry(sample("How does the token bucket refill?"), { session: "s1", cwd, now }).out).toMatch(/^logged/);
+    expect(listEntries()).toHaveLength(3);
+  });
+
+  it("stores level, inferring it from kind when omitted", () => {
+    addEntry(sample("Why is detail inferred?"), { session: "s1", cwd, now });
+    addEntry(sample("Why a queue over cron?").replace("kind: bug ", "kind: decision "), { session: "s1", cwd, now });
+    addEntry(sample("Why explicit design?").replace("skill: debugging", "level: design\nskill: debugging"), { session: "s1", cwd, now });
+    const byQ = Object.fromEntries(listEntries().map((e) => [e.testable, e.level]));
+    expect(byQ["Why is detail inferred?"]).toBe("detail");
+    expect(byQ["Why a queue over cron?"]).toBe("design");
+    expect(byQ["Why explicit design?"]).toBe("design");
   });
 
   it("rejects an entry with no testable line", () => {

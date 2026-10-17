@@ -1,9 +1,19 @@
 import fs from "node:fs";
 import path from "node:path";
 import { paths } from "./paths.js";
+import type { Level } from "./entries.js";
 import type { Grade } from "./queue.js";
 
-export const QUESTION_TYPES = ["explain-why", "predict-behavior", "find-the-bug", "rewrite-from-spec", "recall"] as const;
+// detail-level: predict-behavior, find-the-bug, rewrite-from-spec; design-level: explain-why, what-breaks, tradeoff-at-scale.
+export const QUESTION_TYPES = [
+  "explain-why",
+  "what-breaks",
+  "tradeoff-at-scale",
+  "predict-behavior",
+  "find-the-bug",
+  "rewrite-from-spec",
+  "recall",
+] as const;
 export type QuestionType = (typeof QUESTION_TYPES)[number];
 
 export interface Result {
@@ -11,6 +21,7 @@ export interface Result {
   entry_id: string;
   project: string;
   skill: string;
+  level?: Level; // absent on results recorded before v0.3
   question_type: QuestionType;
   grade: Grade;
   is_retest: boolean;

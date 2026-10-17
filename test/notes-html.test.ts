@@ -51,7 +51,7 @@ describe("notes page", () => {
       keep_sharp: [],
       entries: [
         toCard(
-          { id: "x", date: "2026-10-01", session: "", project: "p", commit: "", kind: "bug", skill: "s", paths: [], testable: evil, suppressed: false, body: evil },
+          { id: "x", date: "2026-10-01", session: "", project: "p", commit: "", kind: "bug", level: "detail", skill: "s", paths: [], testable: evil, suppressed: false, body: evil },
           new Set(),
           {},
         ),

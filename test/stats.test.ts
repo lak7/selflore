@@ -10,6 +10,7 @@ const entry = (id: string, date: string, skill: string, project = "acme"): Entry
   project,
   commit: "",
   kind: "bug",
+  level: "detail",
   skill,
   paths: [],
   testable: "q?",

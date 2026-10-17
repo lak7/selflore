@@ -9,6 +9,7 @@ const entry = (id: string, date: string, extra: Partial<Entry> = {}): Entry => (
   project: "acme",
   commit: "abc1234",
   kind: "bug",
+  level: "detail",
   skill: "debugging",
   paths: ["src/a.ts"],
   testable: `Why ${id}?`,
@@ -35,7 +36,7 @@ describe("notes", () => {
     });
     expect(out).toContain("week of 2026-09-28 (2 entries)");
     expect(out).not.toContain("old");
-    expect(out).toMatch(/Tue 2026-09-29\n {2}• \[bug · debugging\] acme · src\/a\.ts {2}\(retest 2026-10-06\)/);
+    expect(out).toMatch(/Tue 2026-09-29\n {2}• \[bug · detail · debugging\] acme · src\/a\.ts {2}\(retest 2026-10-06\)/);
     expect(out).toContain("Q: Why 2026-10-01-b?");
     expect(out).toContain("Because of retries.");
     expect(out).toContain("+ 2-line snippet @ abc1234");

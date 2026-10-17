@@ -65,6 +65,9 @@ export function renderStats({ entries, results, queue, rating, project }: StatsI
   const backlog = Object.values(queue);
   const overdue = backlog.filter((q) => q.due[0] && new Date(q.due[0]).getTime() <= now).length;
   const observed = results.length ? passes / results.length : null;
+  const entryLevel = new Map(entries.map((e) => [e.id, e.level]));
+  const levelOf = (r: Result) => r.level ?? entryLevel.get(r.entry_id) ?? "detail";
+  const byLevel = (l: string) => results.filter((r) => levelOf(r) === l);
 
   const lines = [
     `selflore stats${project ? ` — ${project}` : ""}`,
@@ -72,6 +75,8 @@ export function renderStats({ entries, results, queue, rating, project }: StatsI
     table(["week of", "entries", "questions", "pass", ...skills.map((s) => `pass:${s}`)], rows),
     "",
     `overall pass rate      ${pct(passes, results.length)} (${passes}/${results.length})`,
+    `detail pass            ${pct(passCount(byLevel("detail")), byLevel("detail").length)}`,
+    `design pass            ${pct(passCount(byLevel("design")), byLevel("design").length)}`,
     `first-attempt pass     ${pct(passCount(first), first.length)}`,
     `retest pass            ${pct(passCount(retest), retest.length)}`,
     `retest backlog         ${backlog.length} queued, ${overdue} due now`,

@@ -20,6 +20,7 @@ describe("entries", () => {
       project: "acme-api",
       commit: "abc1234",
       kind: "decision",
+      level: "design",
       skill: "architecture",
       paths: ["a.ts", "b/c.ts"],
       testable: 'Why "queue" over cron: what breaks?',

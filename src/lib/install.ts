@@ -45,8 +45,6 @@ export function removeFiles(purge: boolean): void {
   uninstallHooks();
   fs.rmSync(paths.skill(), { recursive: true, force: true });
   if (purge) fs.rmSync(selfloreHome(), { recursive: true, force: true });
-  else {
-    fs.rmSync(paths.app(), { recursive: true, force: true });
-    fs.rmSync(paths.state(), { recursive: true, force: true });
-  }
+  // Session state is data: keeping it means a remove + init doesn't re-trigger capture for old sessions.
+  else fs.rmSync(paths.app(), { recursive: true, force: true });
 }

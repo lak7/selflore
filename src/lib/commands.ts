@@ -1,11 +1,24 @@
 import { execFileSync } from "node:child_process";
 import path from "node:path";
-import { readConfig, writeConfig } from "./config.js";
 import {
-  deleteEntry,
+  BALANCES,
+  configExists,
+  designShare,
+  describeFocus,
+  effectiveFocus,
+  FOCUS_MODES,
+  readConfig,
+  writeConfig,
+  type Balance,
+  type FocusMode,
+} from "./config.js";
+import {
+  inferLevel,
   listEntries,
+  MERGE_SIMILARITY,
   parseEntry,
   readEntry,
+  similarity,
   uniqueId,
   validateEntry,
   writeEntry,
@@ -15,7 +28,7 @@ import { applyGrade, dueItems, readQueue, writeQueue, type Grade } from "./queue
 import { appendResult, QUESTION_TYPES, readResults, testedEntryIds, type QuestionType } from "./results.js";
 import { readSession, writeSession } from "./session.js";
 import fs from "node:fs";
-import { renderNotes } from "./notes.js";
+import { renderNotes, staleBefore } from "./notes.js";
 import { buildNotesData, renderNotesHtml } from "./notes-html.js";
 import { openInBrowser } from "./open.js";
 import { paths } from "./paths.js";
@@ -57,71 +70,101 @@ function today(now: Date): string {
 }
 
 function summarize(e: Entry): string {
-  return `- ${e.id} [${e.kind}/${e.skill}] ${e.testable}`;
+  return `- ${e.id} [${e.kind}/${e.level}/${e.skill}] ${e.testable}`;
 }
 
 export interface AddOpts {
   session: string;
   cwd: string;
-  manual?: boolean;
-  replace?: string;
   now?: Date;
 }
 
-/** Validate, enrich and store an entry. Enforces max_entries_per_session (manual logs warn instead). */
-export function addEntry(markdown: string, opts: AddOpts): CmdResult {
-  const now = opts.now ?? new Date();
-  const parsed = parseEntry(markdown);
-  const errors = validateEntry(parsed);
-  if (errors.length) return fail(`entry rejected:\n${errors.map((e) => `  - ${e}`).join("\n")}`);
+export interface StoreResult {
+  action: "logged" | "updated";
+  entry: Entry;
+}
 
-  const config = readConfig();
-  const session = readSession(opts.session);
-  const sessionEntries = session.entries.filter((id) => readEntry(id) !== null);
-  let warning = "";
-
-  if (opts.replace) {
-    if (!sessionEntries.includes(opts.replace))
-      return fail(`cannot replace ${opts.replace}: it was not logged in this session`);
-    if (testedEntryIds(readResults()).has(opts.replace))
-      return fail(`cannot replace ${opts.replace}: it has already been tested`);
-    deleteEntry(opts.replace);
-    sessionEntries.splice(sessionEntries.indexOf(opts.replace), 1);
-  } else if (sessionEntries.length >= config.max_entries_per_session) {
-    if (!opts.manual) {
-      const current = sessionEntries.map((id) => readEntry(id)).filter((e): e is Entry => e !== null);
-      return fail(
-        [
-          `cap reached: ${sessionEntries.length}/${config.max_entries_per_session} entries this session.`,
-          `Keep the ones that best match keep_sharp (${config.keep_sharp.join(", ")}).`,
-          `If the new one is better, rerun with \`entry replace <id>\`; otherwise drop it.`,
-          ...current.map(summarize),
-        ].join("\n"),
-        2,
-      );
+/**
+ * Find an untested entry this one should be merged into: same project, a shared path,
+ * and a similar question. Long sessions keep touching the same area; this keeps one
+ * entry per idea instead of a pile of near-duplicates.
+ */
+export function findMergeTarget(candidate: Pick<Entry, "project" | "paths" | "testable">, tested: Set<string>): Entry | null {
+  const queue = readQueue();
+  let best: Entry | null = null;
+  let bestScore = 0;
+  for (const e of listEntries()) {
+    if (e.suppressed || e.project !== candidate.project || tested.has(e.id) || queue[e.id]) continue;
+    const sharesPath = e.paths.some((p) => candidate.paths.includes(p));
+    const score = similarity(e.testable, candidate.testable);
+    const threshold = sharesPath ? MERGE_SIMILARITY : 0.8; // without a shared file, only near-identical questions merge
+    if (score >= threshold && score > bestScore) {
+      best = e;
+      bestScore = score;
     }
-    warning = `\nnote: over the session cap (${config.max_entries_per_session}); logged anyway because it was manual.`;
+  }
+  return best;
+}
+
+/** Enrich, merge-or-create and store a validated entry. Shared by `entry add` and the background worker. */
+export function storeEntry(parsed: Partial<Entry>, opts: AddOpts): StoreResult {
+  const now = opts.now ?? new Date();
+  const info = projectInfo(opts.cwd);
+  const project = parsed.project ? String(parsed.project) : info.project;
+  const commit = parsed.commit ? String(parsed.commit) : info.commit;
+  const paths = Array.isArray(parsed.paths) ? parsed.paths.map(String) : [];
+  const testable = String(parsed.testable);
+  const level = parsed.level ?? inferLevel(parsed.kind);
+  const session = readSession(opts.session);
+
+  const target = findMergeTarget({ project, paths, testable }, testedEntryIds(readResults()));
+  if (target) {
+    const merged: Entry = {
+      ...target,
+      kind: parsed.kind!,
+      level,
+      skill: String(parsed.skill),
+      paths: [...new Set([...target.paths, ...paths])],
+      testable,
+      commit: commit || target.commit,
+      body: parsed.body ?? target.body,
+    };
+    writeEntry(merged);
+    if (!session.entries.includes(merged.id)) writeSession(opts.session, { ...session, entries: [...session.entries, merged.id] });
+    return { action: "updated", entry: merged };
   }
 
-  const { project, commit } = projectInfo(opts.cwd);
   const date = typeof parsed.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(parsed.date) ? parsed.date : today(now);
   const entry: Entry = {
-    id: uniqueId(date, String(parsed.testable)),
+    id: uniqueId(date, testable),
     date,
     session: opts.session,
-    project: parsed.project ? String(parsed.project) : project,
-    commit: parsed.commit ? String(parsed.commit) : commit,
+    project,
+    commit,
     kind: parsed.kind!,
+    level,
     skill: String(parsed.skill),
-    paths: Array.isArray(parsed.paths) ? parsed.paths.map(String) : [],
-    testable: String(parsed.testable),
+    paths,
+    testable,
     suppressed: false,
     body: parsed.body ?? "",
   };
   writeEntry(entry);
-  writeSession(opts.session, { ...session, entries: [...sessionEntries, entry.id] });
-  const count = sessionEntries.length + 1;
-  return ok(`logged ${entry.id} (${count}/${config.max_entries_per_session} this session)${warning}`);
+  writeSession(opts.session, { ...session, entries: [...session.entries, entry.id] });
+  return { action: "logged", entry };
+}
+
+/** Validate and store an entry from markdown. There is no per-session cap; near-duplicates are merged. */
+export function addEntry(markdown: string, opts: AddOpts): CmdResult {
+  const parsed = parseEntry(markdown);
+  const errors = validateEntry(parsed);
+  if (errors.length) return fail(`entry rejected:\n${errors.map((e) => `  - ${e}`).join("\n")}`);
+  const { action, entry } = storeEntry(parsed, opts);
+  return ok(
+    action === "updated"
+      ? `updated ${entry.id} (merged with a similar untested entry) [${entry.level}]`
+      : `logged ${entry.id} [${entry.level}]`,
+  );
 }
 
 export function listCmd(session?: string): CmdResult {
@@ -135,6 +178,17 @@ export function listCmd(session?: string): CmdResult {
 
 export const QUIZ_SIZE = 10;
 
+/** Split QUIZ_SIZE into design/detail counts from the candidates' effective focus (per project). */
+export function targetSplit(entries: Entry[], config = readConfig()): { design: number; detail: number } {
+  if (!entries.length) {
+    const design = Math.round(QUIZ_SIZE * designShare(effectiveFocus(config)));
+    return { design, detail: QUIZ_SIZE - design };
+  }
+  const share = entries.reduce((sum, e) => sum + designShare(effectiveFocus(config, e.project)), 0) / entries.length;
+  const design = Math.round(QUIZ_SIZE * share);
+  return { design, detail: QUIZ_SIZE - design };
+}
+
 /** Everything the skill needs to build this week's quiz, as JSON. */
 export function quizInput(now = new Date()): CmdResult {
   const config = readConfig();
@@ -144,11 +198,15 @@ export function quizInput(now = new Date()): CmdResult {
   const due = dueItems(queue, now);
   const dueIds = new Set(due.map((d) => d.entry_id));
   const entries = listEntries().filter((e) => !e.suppressed);
+  const cutoff = staleBefore(now);
+  const withFocus = (e: Entry) => ({ ...e, focus: effectiveFocus(config, e.project).mode });
 
   const retests = entries
     .filter((e) => dueIds.has(e.id))
-    .map((e) => ({ ...e, retest: { streak: queue[e.id].streak, due: queue[e.id].due[0] } }));
-  const fresh = entries.filter((e) => !tested.has(e.id) && !queue[e.id]);
+    .map((e) => ({ ...withFocus(e), retest: { streak: queue[e.id].streak, due: queue[e.id].due[0] } }));
+  const untested = entries.filter((e) => !tested.has(e.id) && !queue[e.id]);
+  // Untested for 3+ weeks: out of the quiz pool (still visible in notes), so a heavy week can't create an endless backlog.
+  const fresh = untested.filter((e) => e.date >= cutoff);
 
   return ok(
     JSON.stringify(
@@ -156,8 +214,10 @@ export function quizInput(now = new Date()): CmdResult {
         now: now.toISOString(),
         config: { rating: config.rating, keep_sharp: config.keep_sharp, last_test_at: config.last_test_at },
         target_questions: QUIZ_SIZE,
+        target_split: targetSplit([...retests, ...fresh], config),
+        stale_count: untested.length - fresh.length,
         retests,
-        fresh,
+        fresh: fresh.map(withFocus),
       },
       null,
       2,
@@ -178,6 +238,7 @@ export function recordCmd(entryId: string, grade: string, type: string, now = ne
     entry_id: entryId,
     project: entry.project,
     skill: entry.skill,
+    level: entry.level,
     question_type: type as QuestionType,
     grade: grade as Grade,
     is_retest: isRetest,
@@ -246,5 +307,60 @@ export function notesCmd(opts: NotesOpts = {}, now = new Date()): CmdResult {
       all: opts.all,
       project: opts.project,
     }),
+  );
+}
+
+export interface FocusOpts {
+  mode?: string;
+  balance?: string;
+  project?: boolean;
+  reset?: boolean;
+  cwd: string;
+}
+
+/** Parse `focus` CLI args: [mode] [--balance x] [--project] [--reset]. Shared by `selflore` and `sl`. */
+export function focusArgs(args: string[], cwd = process.cwd()): FocusOpts {
+  const i = args.indexOf("--balance");
+  const mode = args.find((a, j) => !a.startsWith("--") && (i < 0 || j !== i + 1));
+  return {
+    mode,
+    balance: i >= 0 ? args[i + 1] : undefined,
+    project: args.includes("--project"),
+    reset: args.includes("--reset"),
+    cwd,
+  };
+}
+
+/** Show or change the capture focus, globally or for the current project (which then takes priority). */
+export function focusCmd(opts: FocusOpts): CmdResult {
+  if (!configExists()) return fail("selflore is not set up yet; run `npx selflore init` first");
+  const config = readConfig();
+  const project = projectInfo(opts.cwd).project;
+
+  if (opts.mode && !FOCUS_MODES.includes(opts.mode as FocusMode))
+    return fail(`focus must be one of ${FOCUS_MODES.join(" | ")}`);
+  if (opts.balance && !BALANCES.includes(opts.balance as Balance))
+    return fail(`--balance must be one of ${BALANCES.join(" | ")}`);
+
+  if (opts.reset) {
+    if (!opts.project) return fail("--reset only applies with --project (it removes this project's override)");
+    const { [project]: _removed, ...rest } = config.projects;
+    writeConfig({ ...config, projects: rest });
+  } else if (opts.mode || opts.balance) {
+    const change = {
+      ...(opts.mode ? { mode: opts.mode as FocusMode } : {}),
+      ...(opts.balance ? { balance: opts.balance as Balance } : {}),
+    };
+    if (opts.project) writeConfig({ ...config, projects: { ...config.projects, [project]: { ...config.projects[project], ...change } } });
+    else writeConfig({ ...config, focus: { ...config.focus, ...change } });
+  }
+
+  const next = readConfig();
+  const eff = effectiveFocus(next, project);
+  return ok(
+    [
+      `global focus:  ${describeFocus(next.focus)}`,
+      `${project}:  ${describeFocus(eff)} (${eff.source === "project" ? "project override" : "from global"})`,
+    ].join("\n"),
   );
 }
