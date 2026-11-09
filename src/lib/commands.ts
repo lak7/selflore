@@ -19,19 +19,29 @@ import {
   parseEntry,
   readEntry,
   similarity,
+  splitBody,
   uniqueId,
   validateEntry,
   writeEntry,
   type Entry,
 } from "./entries.js";
 import { applyGrade, dueItems, readQueue, writeQueue, type Grade } from "./queue.js";
-import { appendResult, QUESTION_TYPES, readResults, testedEntryIds, type QuestionType } from "./results.js";
+import {
+  appendResult,
+  MAX_ANSWER_CHARS,
+  QUESTION_TYPES,
+  readResults,
+  testedEntryIds,
+  type QuestionType,
+  type ResultSource,
+} from "./results.js";
 import { readSession, writeSession } from "./session.js";
 import fs from "node:fs";
 import { renderNotes, staleBefore } from "./notes.js";
 import { buildNotesData, renderNotesHtml } from "./notes-html.js";
 import { openInBrowser } from "./open.js";
 import { paths } from "./paths.js";
+import { ensureServer } from "./server-launch.js";
 import { renderStats } from "./stats.js";
 
 export interface CmdResult {
@@ -189,8 +199,21 @@ export function targetSplit(entries: Entry[], config = readConfig()): { design: 
   return { design, detail: QUIZ_SIZE - design };
 }
 
-/** Everything the skill needs to build this week's quiz, as JSON. */
-export function quizInput(now = new Date()): CmdResult {
+type PoolEntry = Entry & { focus: FocusMode };
+type RetestEntry = PoolEntry & { retest: { streak: number; due: string } };
+
+export interface QuizPool {
+  now: string;
+  config: { rating: number; keep_sharp: string[]; last_test_at: string | null };
+  target_questions: number;
+  target_split: { design: number; detail: number };
+  stale_count: number;
+  retests: RetestEntry[];
+  fresh: PoolEntry[];
+}
+
+/** The material for this week's quiz: due retests and fresh entries. Answered entries drop out on their own. */
+export function quizPool(now = new Date()): QuizPool {
   const config = readConfig();
   const results = readResults();
   const tested = testedEntryIds(results);
@@ -199,7 +222,7 @@ export function quizInput(now = new Date()): CmdResult {
   const dueIds = new Set(due.map((d) => d.entry_id));
   const entries = listEntries().filter((e) => !e.suppressed);
   const cutoff = staleBefore(now);
-  const withFocus = (e: Entry) => ({ ...e, focus: effectiveFocus(config, e.project).mode });
+  const withFocus = (e: Entry): PoolEntry => ({ ...e, focus: effectiveFocus(config, e.project).mode });
 
   const retests = entries
     .filter((e) => dueIds.has(e.id))
@@ -208,24 +231,81 @@ export function quizInput(now = new Date()): CmdResult {
   // Untested for 3+ weeks: out of the quiz pool (still visible in notes), so a heavy week can't create an endless backlog.
   const fresh = untested.filter((e) => e.date >= cutoff);
 
-  return ok(
-    JSON.stringify(
-      {
-        now: now.toISOString(),
-        config: { rating: config.rating, keep_sharp: config.keep_sharp, last_test_at: config.last_test_at },
-        target_questions: QUIZ_SIZE,
-        target_split: targetSplit([...retests, ...fresh], config),
-        stale_count: untested.length - fresh.length,
-        retests,
-        fresh: fresh.map(withFocus),
-      },
-      null,
-      2,
-    ),
-  );
+  return {
+    now: now.toISOString(),
+    config: { rating: config.rating, keep_sharp: config.keep_sharp, last_test_at: config.last_test_at },
+    target_questions: QUIZ_SIZE,
+    target_split: targetSplit([...retests, ...fresh], config),
+    stale_count: untested.length - fresh.length,
+    retests,
+    fresh: fresh.map(withFocus),
+  };
 }
 
-export function recordCmd(entryId: string, grade: string, type: string, now = new Date()): CmdResult {
+/** Everything the skill needs to build this week's quiz, as JSON. */
+export function quizInput(now = new Date()): CmdResult {
+  return ok(JSON.stringify(quizPool(now), null, 2));
+}
+
+export interface WebQuestion {
+  id: string;
+  project: string;
+  kind: string;
+  level: string;
+  skill: string;
+  paths: string[];
+  commit: string;
+  testable: string;
+  prose: string;
+  snippet: string | null;
+  snippetLang: string;
+  retest: boolean;
+}
+
+/**
+ * The web test: the selection test.md asks Claude to make, done in code. Every due retest,
+ * then fresh entries up to QUIZ_SIZE following the focus split (keep_sharp skills first, then
+ * oldest). Never padded: if a level runs short, the other level fills in.
+ */
+export function buildWebQuiz(now = new Date()): WebQuestion[] {
+  const pool = quizPool(now);
+  const sharp = new Set(pool.config.keep_sharp.map((s) => s.toLowerCase()));
+  const rank = (a: Entry, b: Entry) =>
+    Number(sharp.has(b.skill.toLowerCase())) - Number(sharp.has(a.skill.toLowerCase())) || a.id.localeCompare(b.id);
+  const room = Math.max(0, QUIZ_SIZE - pool.retests.length);
+  const design = pool.fresh.filter((e) => e.level === "design").sort(rank);
+  const detail = pool.fresh.filter((e) => e.level === "detail").sort(rank);
+  const scale = room / QUIZ_SIZE;
+  let wantDesign = Math.min(design.length, Math.round(pool.target_split.design * scale));
+  const wantDetail = Math.min(detail.length, room - wantDesign);
+  wantDesign = Math.min(design.length, room - wantDetail);
+  const picked: Entry[] = [...pool.retests, ...design.slice(0, wantDesign), ...detail.slice(0, wantDetail)];
+  const retestIds = new Set(pool.retests.map((e) => e.id));
+  return picked.map((e) => {
+    const { prose, snippet } = splitBody(e.body);
+    return {
+      id: e.id,
+      project: e.project,
+      kind: e.kind,
+      level: e.level,
+      skill: e.skill,
+      paths: e.paths,
+      commit: e.commit,
+      testable: e.testable,
+      prose,
+      snippet: snippet ? snippet.replace(/\s+$/, "") : null,
+      snippetLang: e.body.match(/```([\w+-]+)/)?.[1] ?? "",
+      retest: retestIds.has(e.id),
+    };
+  });
+}
+
+export interface RecordOpts {
+  source?: ResultSource;
+  answer?: string;
+}
+
+export function recordCmd(entryId: string, grade: string, type: string, now = new Date(), opts: RecordOpts = {}): CmdResult {
   if (!["got", "partial", "missed"].includes(grade)) return fail("grade must be got | partial | missed");
   if (!QUESTION_TYPES.includes(type as QuestionType)) return fail(`type must be one of ${QUESTION_TYPES.join(" | ")}`);
   const entry = readEntry(entryId);
@@ -242,6 +322,8 @@ export function recordCmd(entryId: string, grade: string, type: string, now = ne
     question_type: type as QuestionType,
     grade: grade as Grade,
     is_retest: isRetest,
+    ...(opts.source && opts.source !== "claude" ? { source: opts.source } : {}),
+    ...(opts.answer?.trim() ? { answer: opts.answer.trim().slice(0, MAX_ANSWER_CHARS) } : {}),
   });
   const next = applyGrade(queue, entryId, grade as Grade, now);
   writeQueue(next);
@@ -290,13 +372,22 @@ export interface NotesOpts {
   text?: boolean;
 }
 
-/** Write the notes page and open it in the browser; `text` prints the plain-text list instead. */
-export function notesCmd(opts: NotesOpts = {}, now = new Date()): CmdResult {
+/**
+ * Open the notes page, served by the local notes server so the in-page test can record answers.
+ * Falls back to a static file (no test) if the server can't start; `text` prints the plain-text list.
+ */
+export async function notesCmd(opts: NotesOpts = {}, now = new Date()): Promise<CmdResult> {
   if (!opts.text) {
+    const server = await ensureServer();
+    if (server) {
+      const hash = [opts.all ? "all" : "", opts.project ? `project=${encodeURIComponent(opts.project)}` : ""].filter(Boolean).join("&");
+      const url = `http://127.0.0.1:${server.port}/?t=${server.token}${hash ? `#${hash}` : ""}`;
+      return ok(openInBrowser(url) ? `opened ${url}` : `notes page: ${url}`);
+    }
     const file = paths.notesHtml();
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, renderNotesHtml({ ...buildNotesData(now), initial: { all: !!opts.all, project: opts.project ?? null } }));
-    return ok(openInBrowser(file) ? `opened ${file}` : `notes page written: file://${file}`);
+    return ok(openInBrowser(file) ? `opened ${file} (test unavailable: notes server didn't start)` : `notes page written: file://${file}`);
   }
   return ok(
     renderNotes({

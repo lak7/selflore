@@ -22,7 +22,7 @@ Look at the arguments the skill was invoked with:
 |---|---|
 | `test` | Read [references/test.md](references/test.md) and run the weekly test. |
 | `log` | Read [references/log.md](references/log.md) and write a manual entry. |
-| `notes` | Run `{{SL}} notes` (add `--all` or `--project <name>` if the user asks). It opens the notes page in the browser. Reply with one line: that it opened, or the `file://` path if it couldn't open. Don't repeat the entries in chat. |
+| `notes` | Run `{{SL}} notes` (add `--all` or `--project <name>` if the user asks). It opens the notes page in the browser. Reply with one line: that it opened (or the URL it printed), and that the page has a **Take test** button for a self-graded test. Don't repeat the entries in chat. |
 | `focus` | Run `{{SL}} focus <arguments>` and show the output verbatim. |
 | `stats` | Run `{{SL}} stats` (add `--project <name>` if the user names one) and show the output verbatim in a code block. Add at most two sentences of interpretation. |
 | none, or a `selflore:` hint in quiet mode | Capture: follow the rules below and [references/capture.md](references/capture.md). |

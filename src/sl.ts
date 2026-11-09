@@ -23,7 +23,7 @@ const USAGE = `usage: sl <command>
   suppress <id>                           flag an entry as unfair; never test it again
   finish-test
   stats [--project <name>]
-  notes [--all] [--project <name>] [--text]  open the notes page (or print text)
+  notes [--all] [--project <name>] [--text]  open the notes page, with an in-page test (or print text)
   focus [details|design|mixed] [--balance design|balanced|details] [--project] [--reset]`;
 
 function flag(args: string[], name: string): string | undefined {

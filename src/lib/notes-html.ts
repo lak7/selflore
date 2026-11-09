@@ -28,6 +28,7 @@ export interface NotesData {
   keep_sharp: string[];
   entries: NoteCard[];
   initial?: { all: boolean; project: string | null };
+  server?: boolean; // served by the local notes server: the in-page test is available
 }
 
 export function toCard(e: Entry, tested: Set<string>, queue: Queue, now = new Date()): NoteCard {
@@ -85,6 +86,7 @@ const CSS = String.raw`
   }
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html, body { margin: 0; }
 body {
   background: var(--bg); color: var(--text);
@@ -156,6 +158,30 @@ pre .ln::before { counter-increment: ln; content: counter(ln); display: inline-b
 .empty strong { display: block; color: var(--text); font-size: 16px; margin-bottom: 4px; }
 .empty button { margin-top: 12px; }
 footer { margin-top: 48px; color: var(--faint); font-size: 12px; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+.testbtn { font: inherit; font-size: 14px; font-weight: 600; border: 0; background: var(--accent); color: var(--surface); padding: 9px 14px; border-radius: 10px; cursor: pointer; }
+.testbtn:hover { filter: brightness(1.08); }
+.btn { font: inherit; font-size: 13.5px; font-weight: 600; border: 1px solid var(--border); background: var(--surface); color: var(--text); padding: 8px 14px; border-radius: 9px; cursor: pointer; }
+.btn:hover:not(:disabled) { border-color: var(--faint); }
+.btn:disabled { opacity: 0.5; cursor: default; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--surface); }
+.btn.quiet { border-color: transparent; background: transparent; color: var(--muted); }
+.btn.got { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, transparent); }
+.btn.partial { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, transparent); }
+.btn.missed { color: var(--bug); border-color: color-mix(in srgb, var(--bug) 45%, transparent); }
+.btn kbd { margin-left: 6px; }
+.testhead { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; color: var(--muted); font-size: 13px; }
+.progress { height: 4px; background: var(--surface-2); border-radius: 999px; overflow: hidden; margin-bottom: 18px; }
+.progress span { display: block; height: 100%; background: var(--accent); transition: width 0.2s; }
+.retestbadge { color: var(--warn); border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent); font-weight: 500; }
+textarea.reply { width: 100%; min-height: 130px; resize: vertical; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-top: 14px; outline: none; }
+textarea.reply:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 14px; }
+.actions .spacer { flex: 1; }
+.yours { white-space: pre-wrap; background: var(--surface-2); border-radius: 10px; padding: 10px 12px; margin: 0 0 12px; }
+.label { font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--faint); margin: 0 0 6px; }
+.err { color: var(--bug); font-size: 13px; margin-top: 10px; }
+.summary .tiles { margin: 14px 0; grid-template-columns: repeat(3, 1fr); }
+.summary ul { margin: 10px 0 0; padding-left: 18px; color: var(--muted); font-size: 13.5px; }
 kbd { font: 11px ui-monospace, Menlo, monospace; border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; color: var(--muted); background: var(--surface); }
 @media (max-width: 640px) {
   .wrap { padding-top: 24px; }
@@ -165,6 +191,8 @@ kbd { font: 11px ui-monospace, Menlo, monospace; border: 1px solid var(--border)
   .q { font-size: 16.5px; }
   .card { padding: 16px; }
   .chiprow .k { width: 100%; }
+  .testbtn { width: 100%; }
+  .summary .tiles { grid-template-columns: repeat(3, 1fr); }
 }
 `;
 
@@ -361,7 +389,186 @@ const JS = String.raw`
   }
   document.getElementById("generated").textContent = "Generated " + new Date(DATA.generated_at).toLocaleString();
 
+  // ---- In-page test (only when served by the local notes server) ----
+  var TOKEN = new URLSearchParams(location.search).get("t") || "";
+  var test = null; // { questions, i, revealed, results: [{q, grade, message}], skipped, unfair }
+
+  function api(method, url, body) {
+    return fetch(url, {
+      method: method,
+      headers: { "content-type": "application/json", "x-selflore-token": TOKEN },
+      body: body ? JSON.stringify(body) : undefined,
+    }).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (j) {
+        if (!r.ok) throw new Error(j.error || ("HTTP " + r.status + (r.status === 403 ? " (reopen with npx selflore notes)" : "")));
+        return j;
+      });
+    });
+  }
+  function draftKey(id) { return "selflore-draft:" + id; }
+  function getDraft(id) { try { return localStorage.getItem(draftKey(id)) || ""; } catch (e) { return ""; } }
+  function setDraft(id, v) { try { if (v) localStorage.setItem(draftKey(id), v); else localStorage.removeItem(draftKey(id)); } catch (e) {} }
+
+  function showTest(on) {
+    document.getElementById("notesview").hidden = on;
+    document.getElementById("testview").hidden = !on;
+    document.getElementById("testbtn").hidden = on || !DATA.server;
+    document.querySelector(".weeknav").hidden = on;
+    window.scrollTo(0, 0);
+  }
+
+  function paras(text) {
+    var box = h("div");
+    text.split(/\n\s*\n/).forEach(function (p) { if (p.trim()) box.appendChild(h("p", { text: p.replace(/\s*\n\s*/g, " ").trim() })); });
+    return box;
+  }
+
+  function startTest() {
+    var btn = document.getElementById("testbtn");
+    btn.disabled = true;
+    api("GET", "/api/quiz").then(function (j) {
+      btn.disabled = false;
+      test = { questions: j.questions || [], i: 0, revealed: false, results: [], skipped: 0, unfair: 0, error: "" };
+      showTest(true);
+      if (!test.questions.length) renderSummary(); else renderQuestion();
+    }, function (err) { btn.disabled = false; btn.textContent = "Test unavailable: " + err.message; });
+  }
+
+  function renderQuestion() {
+    var q = test.questions[test.i];
+    var n = test.questions.length;
+    var view = document.getElementById("testview"); view.textContent = "";
+    view.appendChild(h("div", { class: "testhead" },
+      h("span", { text: "Question " + (test.i + 1) + " of " + n + " · answer in your own words, then grade yourself honestly" }),
+      h("button", { class: "btn quiet", text: "End test", onclick: renderSummary })));
+    var bar = h("div", { class: "progress" }, h("span")); bar.firstChild.style.width = Math.round((test.i / n) * 100) + "%";
+    view.appendChild(bar);
+
+    var c = h("article", { class: "card" });
+    c.style.setProperty("--kind", "var(" + (KIND_VAR[q.kind] || "--border") + ")");
+    c.appendChild(h("div", { class: "row" },
+      h("span", { class: "badge kind", text: q.kind }),
+      h("span", { class: "badge level " + q.level, text: LEVEL_LABEL[q.level] || q.level }),
+      h("span", { class: "badge skill", text: q.skill }),
+      q.retest ? h("span", { class: "badge retestbadge", text: "Retest" }) : null));
+    c.appendChild(h("div", { class: "q", text: q.testable }));
+    var meta = h("div", { class: "meta" });
+    if (q.project) meta.appendChild(h("span", { text: q.project }));
+    q.paths.forEach(function (p) { meta.appendChild(h("code", { text: p })); });
+    c.appendChild(meta);
+    // Detail questions are often about the code itself, so it can be shown before answering.
+    var codeFirst = q.snippet && q.level === "detail";
+    if (codeFirst) c.appendChild(h("details", null,
+      h("summary", null, h("span", { class: "show", text: "Show code" }), h("span", { class: "hide", text: "Hide code" })),
+      codeBlock(q)));
+
+    var reply = h("textarea", { class: "reply", placeholder: "Your answer: the why, and what would break…  (⌘/Ctrl+Enter to reveal)" });
+    reply.value = getDraft(q.id);
+    reply.addEventListener("input", function () { setDraft(q.id, reply.value); });
+    c.appendChild(reply);
+
+    var err = h("div", { class: "err" });
+    var actions = h("div", { class: "actions" });
+    function lock(on) { Array.prototype.forEach.call(actions.querySelectorAll("button"), function (b) { b.disabled = on; }); }
+    function next() { test.i++; test.revealed = false; if (test.i >= test.questions.length) renderSummary(); else renderQuestion(); }
+    function grade(g) {
+      lock(true); err.textContent = "";
+      api("POST", "/api/answer", { entry_id: q.id, grade: g, answer: reply.value }).then(function (j) {
+        test.results.push({ q: q, grade: g, message: j.message || "" });
+        setDraft(q.id, "");
+        next();
+      }, function (e) { lock(false); err.textContent = "Couldn't save: " + e.message; });
+    }
+    function unfair() {
+      lock(true); err.textContent = "";
+      api("POST", "/api/suppress", { entry_id: q.id }).then(function () { test.unfair++; setDraft(q.id, ""); next(); },
+        function (e) { lock(false); err.textContent = "Couldn't save: " + e.message; });
+    }
+    function reveal() {
+      test.revealed = true;
+      var ans = h("div", { class: "answer" });
+      if (reply.value.trim()) { ans.appendChild(h("div", { class: "label", text: "Your answer" })); ans.appendChild(h("div", { class: "yours", text: reply.value.trim() })); }
+      ans.appendChild(h("div", { class: "label", text: "Answer key" }));
+      ans.appendChild(paras(q.prose));
+      if (q.snippet && !codeFirst) ans.appendChild(codeBlock(q));
+      c.insertBefore(ans, actions);
+      actions.textContent = "";
+      actions.appendChild(h("button", { class: "btn got", onclick: function () { grade("got"); } }, "Got it", h("kbd", { text: "1" })));
+      actions.appendChild(h("button", { class: "btn partial", onclick: function () { grade("partial"); } }, "Partial", h("kbd", { text: "2" })));
+      actions.appendChild(h("button", { class: "btn missed", onclick: function () { grade("missed"); } }, "Missed", h("kbd", { text: "3" })));
+      actions.appendChild(h("span", { class: "spacer" }));
+      actions.appendChild(h("button", { class: "btn quiet", text: "Unfair question", title: "Never ask this again", onclick: unfair }));
+    }
+    test.grade = grade; test.reveal = reveal;
+    reply.addEventListener("keydown", function (ev) { if (ev.key === "Enter" && (ev.metaKey || ev.ctrlKey) && !test.revealed) { ev.preventDefault(); reveal(); } });
+
+    actions.appendChild(h("button", { class: "btn primary", text: "Reveal answer", onclick: reveal }));
+    actions.appendChild(h("button", { class: "btn", text: "Skip", title: "Not recorded; it stays for a later test", onclick: function () { test.skipped++; next(); } }));
+    actions.appendChild(h("span", { class: "spacer" }));
+    actions.appendChild(h("button", { class: "btn quiet", text: "Unfair question", title: "Never ask this again", onclick: unfair }));
+    c.appendChild(actions);
+    c.appendChild(err);
+    view.appendChild(c);
+    reply.focus();
+  }
+
+  function renderSummary() {
+    var view = document.getElementById("testview"); view.textContent = "";
+    var r = test.results;
+    var count = function (g) { return r.filter(function (x) { return x.grade === g; }).length; };
+    var left = Math.max(0, test.questions.length - test.i);
+    var box = h("div", { class: "card summary" });
+    if (!test.questions.length) {
+      box.appendChild(h("div", { class: "q", text: "Nothing to test right now" }));
+      box.appendChild(h("p", { text: "No retests are due and there are no fresh entries. Keep working; new lore shows up here." }));
+    } else {
+      box.appendChild(h("div", { class: "q", text: left ? "Test paused" : "Test done" }));
+      var tiles = h("div", { class: "tiles" });
+      [[count("got"), "Got it"], [count("partial"), "Partial"], [count("missed"), "Missed"]].forEach(function (t) {
+        tiles.appendChild(h("div", { class: "tile" }, h("div", { class: "n", text: String(t[0]) }), h("div", { class: "l", text: t[1] })));
+      });
+      box.appendChild(tiles);
+      var notes = [];
+      var retestPass = r.filter(function (x) { return x.q.retest && x.grade === "got"; }).length;
+      if (retestPass) notes.push(retestPass + " retest" + (retestPass === 1 ? "" : "s") + " passed.");
+      if (r.length) notes.push("Every answer is already saved.");
+      if (left) notes.push(left + " question" + (left === 1 ? "" : "s") + " not answered; " + (left === 1 ? "it stays" : "they stay") + " in the pool for next time.");
+      if (test.skipped) notes.push(test.skipped + " skipped (not recorded).");
+      if (test.unfair) notes.push(test.unfair + " marked unfair and removed from future tests.");
+      var dues = r.filter(function (x) { return x.grade !== "got"; }).map(function (x) {
+        var m = x.message.match(/next retest (\d{4}-\d{2}-\d{2})/);
+        return m ? x.q.testable + " → retest " + fmt(m[1], { month: "short", day: "numeric" }) : null;
+      }).filter(Boolean);
+      box.appendChild(paras(notes.join(" ")));
+      if (dues.length) {
+        box.appendChild(h("div", { class: "label", text: "Coming back" }));
+        var ul = h("ul"); dues.forEach(function (d) { ul.appendChild(h("li", { text: d })); }); box.appendChild(ul);
+      }
+    }
+    var actions = h("div", { class: "actions" });
+    if (left && test.questions.length) actions.appendChild(h("button", { class: "btn primary", text: "Resume", onclick: function () { renderQuestion(); } }));
+    actions.appendChild(h("button", { class: "btn", text: "Back to notes", onclick: function () { location.reload(); } }));
+    box.appendChild(actions);
+    view.appendChild(box);
+    test.grade = test.reveal = null;
+  }
+
+  if (DATA.server) {
+    var tb = document.getElementById("testbtn");
+    tb.hidden = false;
+    tb.onclick = startTest;
+    api("GET", "/api/quiz").then(function (j) {
+      var n = (j.questions || []).length;
+      tb.textContent = n ? "Take test · " + n : "Take test";
+    }, function () {});
+  }
+
   document.addEventListener("keydown", function (ev) {
+    if (test && !document.getElementById("testview").hidden) {
+      if (ev.metaKey || ev.ctrlKey || ev.altKey || (ev.target && ev.target.tagName === "TEXTAREA")) return;
+      if (test.grade && test.revealed && ["1", "2", "3"].indexOf(ev.key) >= 0) { ev.preventDefault(); test.grade(["got", "partial", "missed"][+ev.key - 1]); }
+      return;
+    }
     if (ev.target && (ev.target.tagName === "INPUT" || ev.target.tagName === "TEXTAREA") ) {
       if (ev.key === "Escape") ev.target.blur();
       return;
@@ -377,6 +584,7 @@ const JS = String.raw`
     else if (ev.key === "ArrowRight" && !document.getElementById("next").disabled) document.getElementById("next").click();
   });
 
+  if (DATA.server) document.getElementById("testhint").textContent = "take the test here (you grade yourself), or run /selflore test in Claude Code for graded questions";
   render();
 })();
 `;
@@ -410,7 +618,9 @@ export function renderNotesHtml(data: NotesData): string {
       <button id="next" aria-label="Next week">›</button>
       <button id="alltime" class="alltime" aria-pressed="false">All time</button>
     </nav>
+    <button id="testbtn" class="testbtn" hidden>Take test</button>
   </header>
+  <div id="notesview">
   <section class="tiles" id="tiles" aria-label="Summary"></section>
   <div class="sharp" id="sharp"></div>
   <div class="filters">
@@ -418,9 +628,11 @@ export function renderNotesHtml(data: NotesData): string {
     <div class="chiprows" id="chips"></div>
   </div>
   <main id="list"></main>
+  </div>
+  <div id="testview" hidden></div>
   <footer>
     <span id="generated"></span>
-    <span><kbd>a</kbd> reveal all · <kbd>←</kbd><kbd>→</kbd> weeks · <kbd>/</kbd> search · run <code>/selflore test</code> in Claude Code to be quizzed</span>
+    <span><kbd>a</kbd> reveal all · <kbd>←</kbd><kbd>→</kbd> weeks · <kbd>/</kbd> search · <span id="testhint">run <code>/selflore test</code> in Claude Code to be quizzed</span></span>
   </footer>
 </div>
 <script type="application/json" id="selflore-data">${embedJson(data)}</script>

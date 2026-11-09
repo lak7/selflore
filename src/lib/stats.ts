@@ -68,6 +68,7 @@ export function renderStats({ entries, results, queue, rating, project }: StatsI
   const entryLevel = new Map(entries.map((e) => [e.id, e.level]));
   const levelOf = (r: Result) => r.level ?? entryLevel.get(r.entry_id) ?? "detail";
   const byLevel = (l: string) => results.filter((r) => levelOf(r) === l);
+  const selfGraded = results.filter((r) => r.source === "web").length;
 
   const lines = [
     `selflore stats${project ? ` — ${project}` : ""}`,
@@ -80,6 +81,7 @@ export function renderStats({ entries, results, queue, rating, project }: StatsI
     `first-attempt pass     ${pct(passCount(first), first.length)}`,
     `retest pass            ${pct(passCount(retest), retest.length)}`,
     `retest backlog         ${backlog.length} queued, ${overdue} due now`,
+    ...(selfGraded ? [`self-graded (web)      ${selfGraded} of ${results.length} answers`] : []),
     `self-rating            ${rating}/10 (≈${rating * 10}%) vs observed ${observed === null ? "–" : `${Math.round(observed * 100)}%`}`,
   ];
   if (observed !== null && results.length >= 10) {

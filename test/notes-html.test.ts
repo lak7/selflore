@@ -63,9 +63,10 @@ describe("notes page", () => {
     expect(JSON.parse(embedJson({ t: evil }))).toEqual({ t: evil });
   });
 
-  it("notes writes the page without opening when SELFLORE_NO_OPEN is set; --text keeps plain output", () => {
+  it("notes writes the page without opening when SELFLORE_NO_OPEN is set; --text keeps plain output", async () => {
     addEntry(sample("Page?"), { session: "s", cwd, now });
-    const r = notesCmd({ all: true, project: "v0" }, now);
+    // No built notes-server.js next to the sources under test, so this takes the static fallback.
+    const r = await notesCmd({ all: true, project: "v0" }, now);
     const file = path.join(homes.sl(), "notes.html");
     expect(r.out).toBe(`notes page written: file://${file}`);
     const html = fs.readFileSync(file, "utf8");
@@ -73,6 +74,6 @@ describe("notes page", () => {
     expect(html).toContain('"initial":{"all":true,"project":"v0"}');
     expect(html).toContain("Page?");
 
-    expect(notesCmd({ text: true }, now).out).toMatch(/^selflore notes — week of 2026-09-28/);
+    expect((await notesCmd({ text: true }, now)).out).toMatch(/^selflore notes — week of 2026-09-28/);
   });
 });

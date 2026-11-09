@@ -8,7 +8,7 @@ const USAGE = `selflore — own what your agent builds
 usage:
   npx selflore init              install skill + hooks, run onboarding (re-run to change answers)
   npx selflore init --yes        non-interactive; keep existing config or use defaults
-  npx selflore notes             open this week's notes in your browser (--all, --project <name>, --text)
+  npx selflore notes             open your notes in the browser and take the test there (--all, --project <name>, --text)
   npx selflore focus [mode]      show or set what gets captured: details | design | mixed
                                  --balance design|balanced|details (mixed), --project (this repo only), --reset
   npx selflore remove            remove skill + hooks, keep your data
@@ -27,7 +27,7 @@ async function main(): Promise<void> {
     }
     case "notes": {
       const i = args.indexOf("--project");
-      console.log(notesCmd({ all: args.includes("--all"), project: i >= 0 ? args[i + 1] : undefined, text: args.includes("--text") }).out);
+      console.log((await notesCmd({ all: args.includes("--all"), project: i >= 0 ? args[i + 1] : undefined, text: args.includes("--text") })).out);
       return;
     }
     case "focus": {

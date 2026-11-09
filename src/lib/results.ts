@@ -25,7 +25,12 @@ export interface Result {
   question_type: QuestionType;
   grade: Grade;
   is_retest: boolean;
+  source?: ResultSource; // absent = graded by Claude in /selflore test
+  answer?: string; // the user's own words (web test), kept for a later re-grade
 }
+
+export type ResultSource = "claude" | "web";
+export const MAX_ANSWER_CHARS = 2000;
 
 export function appendResult(r: Result): void {
   fs.mkdirSync(path.dirname(paths.results()), { recursive: true });

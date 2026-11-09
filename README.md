@@ -49,6 +49,8 @@ selflore focus --reset --project          # back to the global setting
 | `/selflore test` | Weekly quiz, about 10 questions and about 20 minutes. Each answer is graded immediately as got it, partial or missed, with an explanation. Say `unfair` to drop a question for good. |
 | `/selflore log` | Log the current thing manually. Also covers work done outside Claude Code. |
 | `/selflore notes` | Opens a page in your browser with everything captured this week, grouped by day, with answers hidden until you click. You can browse weeks and filter. In the terminal, run `npx selflore notes` (`--all`, `--project <name>`, or `--text` for plain text). |
+
+**Testing from the browser.** The notes page has a **Take test** button. It picks the same questions as `/selflore test` (due retests first, then fresh entries). For each one you write your answer, reveal the answer key and grade yourself: got it, partial or missed. Each grade is saved the moment you click, so you can stop at any point: answered questions count, and unanswered ones come back next time. **Skip** records nothing. **Unfair question** drops the entry for good. No model is called here, so the grading is up to you; `/selflore stats` shows how many answers were self-graded.
 | `/selflore focus` | Same as `selflore focus` above, from inside Claude Code. |
 | `/selflore stats` | Weekly table: entries, questions, pass rate overall and by skill, retest backlog, and self-rating vs. observed pass rate. |
 
@@ -66,6 +68,7 @@ npx selflore remove --purge   # remove everything
   - `SessionStart` gives Claude the session id and capture mode, mentions background captures, and (if enabled) reminds you when a test is overdue.
   - `Stop` never blocks. It looks only at work since the last capture: real code changes (not docs, reports or one-off scripts), new dependencies, and fail → fix → pass loops. It then starts a background capture or, in quiet mode, leaves a hint.
   - `UserPromptSubmit` delivers that hint in quiet mode.
+- **Notes server:** `selflore notes` starts a small local server (127.0.0.1 only, with a random token in the URL) so the in-page test can save answers. It stops by itself after 30 minutes with no use.
 - **Data** lives globally in `~/.selflore/`, because learning spans projects:
 
 ```
